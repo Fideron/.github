@@ -1,0 +1,89 @@
+name: Bug Report
+description: Report a reproducible problem or regression.
+title: "[Bug]: "
+labels:
+
+* bug
+  body:
+
+* type: markdown
+  attributes:
+  value: |
+  Thanks for reporting a problem. Please provide enough detail for the issue to be reproduced and investigated.
+
+* type: textarea
+  id: summary
+  attributes:
+  label: Summary
+  description: Describe the problem clearly and concisely.
+  placeholder: What is going wrong?
+  validations:
+  required: true
+
+* type: textarea
+  id: expected
+  attributes:
+  label: Expected Behaviour
+  description: What should have happened?
+  validations:
+  required: true
+
+* type: textarea
+  id: actual
+  attributes:
+  label: Actual Behaviour
+  description: What happened instead?
+  validations:
+  required: true
+
+* type: textarea
+  id: reproduction
+  attributes:
+  label: Steps to Reproduce
+  description: Provide the smallest reliable sequence of steps that reproduces the issue.
+  placeholder: |
+  1. ...
+  2. ...
+  3. ...
+  validations:
+  required: true
+
+* type: textarea
+  id: environment
+  attributes:
+  label: Environment
+  description: Include relevant operating system, runtime, browser, service version, commit, or deployment information.
+  placeholder: |
+  OS:
+  Version:
+  Runtime:
+  Browser:
+  validations:
+  required: false
+
+* type: textarea
+  id: logs
+  attributes:
+  label: Logs or Additional Evidence
+  description: Include relevant logs, screenshots, stack traces, or other diagnostic information.
+  render: shell
+  validations:
+  required: false
+
+* type: textarea
+  id: context
+  attributes:
+  label: Additional Context
+  description: Add anything else that may help with investigation.
+  validations:
+  required: false
+
+* type: checkboxes
+  id: checks
+  attributes:
+  label: Pre-submission Checklist
+  options:
+  - label: I searched existing issues and could not find an existing report for this problem.
+  required: true
+  - label: I have removed or redacted secrets, credentials, and sensitive information.
+  required: true
