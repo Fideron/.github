@@ -1,0 +1,68 @@
+name: Feature Request
+description: Propose new functionality or an improvement to existing behaviour.
+title: "[Feature]: "
+labels:
+
+* enhancement
+  body:
+
+* type: markdown
+  attributes:
+  value: |
+  Use this form to propose new functionality or a meaningful improvement to an existing capability.
+
+* type: textarea
+  id: problem
+  attributes:
+  label: Problem or Opportunity
+  description: What problem should this change solve, or what opportunity does it create?
+  validations:
+  required: true
+
+* type: textarea
+  id: proposal
+  attributes:
+  label: Proposed Solution
+  description: Describe the desired behaviour or capability.
+  validations:
+  required: true
+
+* type: textarea
+  id: value
+  attributes:
+  label: Value
+  description: Explain why this change would be useful to users, maintainers, or the system.
+  validations:
+  required: true
+
+* type: textarea
+  id: alternatives
+  attributes:
+  label: Alternatives Considered
+  description: Describe any alternative approaches or workarounds considered.
+  validations:
+  required: false
+
+* type: textarea
+  id: scope
+  attributes:
+  label: Scope and Constraints
+  description: Note any known technical, architectural, compatibility, or delivery constraints.
+  validations:
+  required: false
+
+* type: textarea
+  id: context
+  attributes:
+  label: Additional Context
+  description: Add diagrams, examples, references, or any other useful context.
+  validations:
+  required: false
+
+* type: checkboxes
+  id: checks
+  attributes:
+  label: Pre-submission Checklist
+  options:
+  - label: I searched existing issues and could not find an equivalent proposal.
+  required: true
