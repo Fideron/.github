@@ -1,0 +1,14 @@
+name: Release Validation
+
+on:
+  push:
+    branches:
+      - feature/reusable-release-validation
+
+jobs:
+  validate-release:
+    uses: ./.github/workflows/reusable-release-validation.yml
+    with:
+      version: v1.2.0
+      source_branch: next
+      target_branch: main
