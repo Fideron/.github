@@ -8,6 +8,16 @@ description: Semantic version being prepared for release.
 required: true
 type: string
 
+  source_branch:
+    description: Source branch for the release.
+    required: true
+    type: string
+
+  target_branch:
+    description: Source branch for the release.
+    required: true
+    type: string
+
 jobs:
 validate-release:
 name: Validate release
@@ -18,12 +28,12 @@ steps:
   - name: Validate release branch flow
     shell: bash
     run: |
-      if [[ "${{ github.base_ref }}" != "main" ]]; then
+      if [[ "${{ inputs.target_branch }}" != "main" ]]; then
         echo "Release pull requests must target 'main'."
         exit 1
       fi
 
-      if [[ "${{ github.head_ref }}" != "next" ]]; then
+      if [[ "${{ inputs.source_branch }}" != "next" ]]; then
         echo "Release pull requests must originate from 'next'."
         exit 1
       fi
