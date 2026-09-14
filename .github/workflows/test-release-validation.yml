@@ -1,0 +1,18 @@
+name: Test Release Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semantic version to validate.
+        required: true
+        default: v1.2.0
+        type: string
+
+jobs:
+  validate:
+    uses: ./.github/workflows/reusable-release-validation.yml
+    with: 
+      version: ${{ inputs.version }}
+      source_branch: next
+      target_branch: main
