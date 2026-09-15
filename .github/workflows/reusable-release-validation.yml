@@ -1,54 +1,52 @@
 name: Reusable Release Validation
 
 on:
-workflow_call:
-inputs:
-version:
-description: Semantic version being prepared for release.
-required: true
-type: string
+  workflow_call:
+    inputs:
+      version:
+        description: Semantic version being prepared for release.
+        required: true
+        type: string
 
-  source_branch:
-    description: Source branch for the release.
-    required: true
-    type: string
+      source_branch:
+        description: Source branch for the release.
+        required: true
+        type: string
 
-  target_branch:
-    description: Source branch for the release.
-    required: true
-    type: string
+      target_branch:
+        description: Target branch for the release.
+        required: true
+        type: string
 
 jobs:
-validate-release:
-name: Validate release
-runs-on: ubuntu-latest
+  validate-release:
+    name: Validate release
+    runs-on: ubuntu-latest
 
-```
-steps:
-  - name: Validate release branch flow
-    shell: bash
-    run: |
-      if [[ "${{ inputs.target_branch }}" != "main" ]]; then
-        echo "Release pull requests must target 'main'."
-        exit 1
-      fi
+    steps:
+      - name: Validate release branch flow
+        shell: bash
+        run: |
+          if [[ "${{ inputs.target_branch }}" != "main" ]]; then
+            echo "Release pull requests must target 'main'."
+            exit 1
+          fi
 
-      if [[ "${{ inputs.source_branch }}" != "next" ]]; then
-        echo "Release pull requests must originate from 'next'."
-        exit 1
-      fi
+          if [[ "${{ inputs.source_branch }}" != "next" ]]; then
+            echo "Release pull requests must originate from 'next'."
+            exit 1
+          fi
 
-      echo "Release branch flow is valid: next -> main"
+          echo "Release branch flow is valid: next -> main"
 
-  - name: Validate semantic version
-    shell: bash
-    env:
-      VERSION: ${{ inputs.version }}
-    run: |
-      if [[ ! "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-        echo "'$VERSION' is not a valid Semantic Version."
-        exit 1
-      fi
+      - name: Validate semantic version
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ ! "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "'$VERSION' is not a valid Semantic Version."
+            exit 1
+          fi
 
-      echo "Semantic Version is valid: $VERSION"
-```
+          echo "Semantic Version is valid: $VERSION"
