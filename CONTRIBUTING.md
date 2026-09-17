@@ -74,6 +74,51 @@ As lower branches are merged, dependent pull requests should be rebased or retar
 
 Stacked pull requests should not be used merely to avoid keeping a pull request appropriately scoped.
 
+## Semantic Version Impact
+
+Every pull request must declare its expected release impact using exactly one Semantic Version impact label.
+
+Available labels are:
+
+* `SemVer: major` - introduces an incompatible or breaking change
+* `SemVer: minor` - introduces new backwards-compatible functionality or capability
+* `SemVer: patch` - introduces a backward-compatible fix or correction
+* `SemVer: none` - does not independently require a released version change
+
+The selected label describes the impact of that pull request if included in a release.
+
+A pull request must not carry more than one Semantic Version impact label.
+
+Examples of changes that may use `SemVer: none` include:
+
+* internal CI or workflow changes with no released behaviour impact
+* documentation changes that do not alter policy or supported behaviour
+* repository housekeeping
+* formatting changes
+* other non-release-affecting maintenance
+
+When preparing a release, Fideron release automation may use the Semantic Version impact labels of included pull requests to determine the required version increment.
+
+Where multiple pull requests are included in a release, the highest-impact Semantic Version label determines the minimum required release increment:
+
+`major` > `minor` > `patch` > `none`
+
+The release process may reject pull requests that do not declare exactly one valid Semantic Version impact.
+
+## Merge Strategy
+
+Fideron preserves meaningful Git ancestry accross the development and release lifecycle.
+
+Unless a repository documents a different requirement:
+
+* working branches are merged into `next` through pull requests
+* release pull requests merge `next` into `main` using a merge commit
+* release pull requests should not be squash-merged or rebased
+* hotfix pull requests should preserve sufficient history for the fix to be propagated into `next`
+
+Individual repositories may choose an appropriate merge strategy for working branches where doing so does not interfere with release traceability.
+
+The release boundary itself is represented by the merge commit from `next` into `main`, the corresponding Semantic Version tag, and the associated GitHub Release.
 ## Review
 
 Pull requests should be reviewed before merge where practical.
@@ -140,7 +185,22 @@ The release pull request should:
 * use the appropriate Semantic Version
 * confirm that repository-specific release requirements have been satisfied
 
-Once merged, `main` becomes the new released or maintained version.
+Release pull requests should be merged using a merge commit.
+
+They should not normally be squash-merged or rebased into `main`.
+
+Preserving the ancestry of `next` ensures that:
+
+* the individual pull requests and commits that formed the release remain part of the released history
+* `main` and `next` retain a common Git ancestry after release
+* subsequent comparisons between the released and upcoming versions remain accurate
+* a separate post-release synchronisation merge from `main` back into `next` is not normally required
+
+The release merge commit provides the boundary between releases on `main`.
+
+Once merged, `main` becomes the new released or maintained version and should be tagged with the corresponding Semantic Version.
+
+Development may then continue from `next`, which already contains the complete history of the newly released version.
 
 ## Semantic Versioning
 

@@ -1,0 +1,83 @@
+name: Calculate SemVer Impact
+
+on:
+  workflow_call:
+    inputs:
+      labels_json:
+        description: JSON array containing pull request labels.
+        required: true
+        type: string
+
+    outputs:
+      semver_impact:
+        description: Normalized Semantic Version impact.
+        value: ${{ jobs.calculate-impact.outputs.semver_impact }}
+
+jobs:
+  calculate-impact:
+    name: Calculate SemVer impact
+    runs-on: ubuntu-latest
+
+    outputs:
+      semver_impact: ${{ steps.semver.outputs.impact }}
+
+    steps:
+      - name: Validate and calculate Semantic Version impact
+        id: semver
+        shell: bash
+        env:
+          LABELS_JSON: ${{ inputs.labels_json }}
+        run: |
+          SEMVER_LABELS=$(echo "$LABELS_JSON" | jq -c '
+            map(
+              select(
+                . == "SemVer: major" or
+                . == "SemVer: minor" or
+                . == "SemVer: patch" or
+                . == "SemVer: none"
+              )
+            )
+          ')
+
+          LABEL_COUNT=$(echo "$SEMVER_LABELS" | jq 'length')
+
+          if [[ "$LABEL_COUNT" -eq 0 ]]; then
+            echo "No Semantic Version impact label found."
+            echo "Exactly one of the following labels is required:"
+            echo "  SemVer: major"
+            echo "  SemVer: minor"
+            echo "  SemVer: patch"
+            echo "  SemVer: none"
+            exit 1
+          fi
+
+          if [[ "$LABEL_COUNT" -gt 1 ]]; then
+            echo "Multiple Semantic Version impact labels found:"
+            echo "$SEMVER_LABELS"
+            echo "Exactly one Semantic Version impact label is allowed."
+            exit 1
+          fi
+
+          SEMVER_LABEL=$(echo "$SEMVER_LABELS" | jq -r '.[0]')
+
+          case "$SEMVER_LABEL" in
+            "SemVer: major")
+              IMPACT="major"
+              ;;
+            "SemVer: minor")
+              IMPACT="minor"
+              ;;
+            "SemVer: patch")
+              IMPACT="patch"
+              ;;
+            "SemVer: none")
+              IMPACT="none"
+              ;;
+            *)
+              echo "Unexpected Semantic Version label: $SEMVER_LABEL"
+              exit 1
+              ;;
+          esac
+
+          echo "Validated Semantic Version impact: $IMPACT"
+          echo "impact=$IMPACT" >> "$GITHUB_OUTPUT"

@@ -130,6 +130,14 @@ Typical flow:
 → release pull request
 → `main`
 
+Working changes should be integrated into `next` through pull requests.
+
+When a governance release is ready, `next` should be merged into `main` through a release pull request using a merge commit.
+
+Release pull requests should not normally be squash-merged or rebased because preserving Git ancestry keeps the released and integration branches correctly related and maintains traceability between individual changes and the release that contains them.
+
+The resulting release merge commit, Semantic Version tag, and GitHub Release together define the release boundary.
+
 Governance changes are versioned using Semantic Versioning.
 
 In general:

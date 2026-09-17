@@ -1,0 +1,21 @@
+name: Release Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+jobs:
+  validate-release:
+    uses: ./.github/workflows/reusable-release-validation.yml
+    with:
+      source_branch: ${{ github.event.pull_request.head.ref }}
+      target_branch: ${{ github.event.pull_request.base.ref }}
+      labels_json: ${{ toJson(github.event.pull_request.labels.*.name) }}
