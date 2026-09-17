@@ -1,0 +1,247 @@
+name: Post-Merge Release State
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: staged-release-${{ github.repository }}
+  queue: max
+
+jobs:
+  calculate-semver-impact:
+    name: Calculate SemVer impact
+    if: github.event.pull_request.merged == true
+    uses: ./.github/workflows/calculate-semver-impact.yml
+    with:
+      labels_json: ${{ toJson(github.event.pull_request.labels.*.name) }}
+
+  update-release-state:
+    name: Update draft release state
+    if: github.event.pull_request.merged == true
+    needs:
+      - calculate-semver-impact
+    runs-on: ubuntu-latest
+
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SEMVER_IMPACT: ${{ needs.calculate-semver-impact.outputs.semver_impact }}
+      REPOSITORY: ${{ github.repository }}
+      TARGET_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+
+    steps:
+      - name: Read latest published release
+        id: published
+        shell: bash
+        run: |
+          RELEASE_JSON=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/releases/latest")
+
+          LATEST_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+
+          if [[ ! "$LATEST_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Latest published release '$LATEST_TAG' is not a supported stable Semantic Version."
+            exit 1
+          fi
+
+          echo "Latest published release: $LATEST_TAG"
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate candidate version
+        id: candidate
+        shell: bash
+        env:
+          LATEST_TAG: ${{ steps.published.outputs.latest_tag }}
+        run: |
+          VERSION="${LATEST_TAG#v}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          case "$SEMVER_IMPACT" in
+            major)
+              CANDIDATE="v$((MAJOR + 1)).0.0"
+              ;;
+            minor)
+              CANDIDATE="v${MAJOR}.$((MINOR + 1)).0"
+              ;;
+            patch)
+              CANDIDATE="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+              ;;
+            none)
+              CANDIDATE="$LATEST_TAG"
+              ;;
+            *)
+              echo "Unsupported Semantic Version impact: $SEMVER_IMPACT"
+              exit 1
+              ;;
+          esac
+
+          echo "Candidate version: $CANDIDATE"
+          echo "candidate=$CANDIDATE" >> "$GITHUB_OUTPUT"
+
+      - name: Find managed draft release
+        id: draft
+        shell: bash
+        run: |
+          RELEASES_JSON=$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/releases?per_page=100")
+
+          DRAFTS=$(echo "$RELEASES_JSON" | jq -c '
+            [
+              .[]
+              | select(.draft == true)
+              | select((.body // "") | contains("<!-- fideron-managed-draft -->"))
+            ]
+          ')
+
+          DRAFT_COUNT=$(echo "$DRAFTS" | jq 'length')
+
+          if [[ "$DRAFT_COUNT" -gt 1 ]]; then
+            echo "More than one Fideron-managed draft release exists."
+            exit 1
+          fi
+
+          if [[ "$DRAFT_COUNT" -eq 0 ]]; then
+            echo "No managed draft release exists."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          DRAFT_ID=$(echo "$DRAFTS" | jq -r '.[0].id')
+          DRAFT_TAG=$(echo "$DRAFTS" | jq -r '.[0].tag_name')
+
+          echo "Managed draft release found: $DRAFT_TAG"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+          echo "id=$DRAFT_ID" >> "$GITHUB_OUTPUT"
+          echo "tag=$DRAFT_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Determine staged version
+        id: staged
+        shell: bash
+        env:
+          CANDIDATE: ${{ steps.candidate.outputs.candidate }}
+          DRAFT_EXISTS: ${{ steps.draft.outputs.exists }}
+          DRAFT_TAG: ${{ steps.draft.outputs.tag }}
+          LATEST_TAG: ${{ steps.published.outputs.latest_tag }}
+        run: |
+          semver_key() {
+            local VERSION="${1#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            printf "%09d%09d%09d\n" "$MAJOR" "$MINOR" "$PATCH"
+          }
+
+          if [[ "$DRAFT_EXISTS" != "true" ]]; then
+            if [[ "$SEMVER_IMPACT" == "none" ]]; then
+              echo "No draft exists and this PR has no release impact."
+              echo "create=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            STAGED_VERSION="$CANDIDATE"
+          else
+            CANDIDATE_KEY=$(semver_key "$CANDIDATE")
+            DRAFT_KEY=$(semver_key "$DRAFT_TAG")
+
+            if [[ "$CANDIDATE_KEY" > "$DRAFT_KEY" ]]; then
+              STAGED_VERSION="$CANDIDATE"
+            else
+              STAGED_VERSION="$DRAFT_TAG"
+            fi
+          fi
+
+          echo "Staged release version: $STAGED_VERSION"
+          echo "create=true" >> "$GITHUB_OUTPUT"
+          echo "version=$STAGED_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Generate release notes
+        if: steps.staged.outputs.create == 'true'
+        id: notes
+        shell: bash
+        env:
+          STAGED_VERSION: ${{ steps.staged.outputs.version }}
+          PREVIOUS_TAG: ${{ steps.published.outputs.latest_tag }}
+        run: |
+          NOTES_JSON=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/releases/generate-notes" \
+            -f tag_name="$STAGED_VERSION" \
+            -f target_commitish="$TARGET_SHA" \
+            -f previous_tag_name="$PREVIOUS_TAG")
+
+          RELEASE_NAME=$(echo "$NOTES_JSON" | jq -r '.name')
+          RELEASE_BODY=$(echo "$NOTES_JSON" | jq -r '.body')
+
+          {
+            echo "name<<EOF"
+            echo "$RELEASE_NAME"
+            echo "EOF"
+            echo "body<<EOF"
+            echo "<!-- fideron-managed-draft -->"
+            echo
+            echo "$RELEASE_BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create draft release
+        if: >
+          steps.staged.outputs.create == 'true' &&
+          steps.draft.outputs.exists != 'true'
+        shell: bash
+        env:
+          STAGED_VERSION: ${{ steps.staged.outputs.version }}
+          RELEASE_NAME: ${{ steps.notes.outputs.name }}
+          RELEASE_BODY: ${{ steps.notes.outputs.body }}
+        run: |
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/releases" \
+            -f tag_name="$STAGED_VERSION" \
+            -f target_commitish="$TARGET_SHA" \
+            -f name="$RELEASE_NAME" \
+            -f body="$RELEASE_BODY" \
+            -F draft=true \
+            -F prerelease=false
+
+      - name: Update draft release
+        if: >
+          steps.staged.outputs.create == 'true' &&
+          steps.draft.outputs.exists == 'true'
+        shell: bash
+        env:
+          DRAFT_ID: ${{ steps.draft.outputs.id }}
+          STAGED_VERSION: ${{ steps.staged.outputs.version }}
+          RELEASE_NAME: ${{ steps.notes.outputs.name }}
+          RELEASE_BODY: ${{ steps.notes.outputs.body }}
+        run: |
+          gh api \
+            --method PATCH \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/$REPOSITORY/releases/$DRAFT_ID" \
+            -f tag_name="$STAGED_VERSION" \
+            -f target_commitish="$TARGET_SHA" \
+            -f name="$RELEASE_NAME" \
+            -f body="$RELEASE_BODY" \
+            -F draft=true \
+            -F prerelease=false
+
+      - name: Release state summary
+        if: steps.staged.outputs.create == 'true'
+        shell: bash
+        env:
+          STAGED_VERSION: ${{ steps.staged.outputs.version }}
+        run: |
+          echo "Draft release state updated successfully."
+          echo "Staged version: $STAGED_VERSION"
+          echo "Target commit: $TARGET_SHA"
+          echo "Release remains unpublished."
