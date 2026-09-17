@@ -1,0 +1,87 @@
+name: Reusable Release Validation
+
+on:
+  workflow_call:
+    inputs:
+      source_branch:
+        description: Source branch for the release.
+        required: true
+        type: string
+
+      target_branch:
+        description: Target branch for the release.
+        required: true
+        type: string
+
+      labels_json:
+        description: JSON array containing the pull request labels.
+        required: true
+        type: string
+
+    outputs:
+      semver_impact:
+        description: Validated Semantic Version impact for the release.
+        value: ${{ jobs.calculate-semver.outputs.semver_impact }}
+
+jobs:
+  validate-branches:
+    name: Validate release branch flow
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate target branch
+        shell: bash
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+        run: |
+          if [[ "$TARGET_BRANCH" != "main" ]]; then
+            echo "Release pull requests must target 'main'."
+            exit 1
+          fi
+
+          echo "Valid release target: main"
+
+      - name: Validate source branch
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          if [[ "$SOURCE_BRANCH" == "next" ]]; then
+            echo "Valid normal release source: next"
+            exit 0
+          fi
+
+          if [[ "$SOURCE_BRANCH" == hotfix/* ]]; then
+            echo "Valid hotfix release source: $SOURCE_BRANCH"
+            exit 0
+          fi
+
+          echo "Invalid release source branch: $SOURCE_BRANCH"
+          echo "Pull requests targeting main must originate from 'next' or 'hotfix/*'."
+          exit 1
+
+  calculate-semver:
+    name: Calculate SemVer impact
+    uses: ./.github/workflows/calculate-semver-impact.yml
+    with:
+      labels_json: ${{ inputs.labels_json }}
+
+  validation-summary:
+    name: Release validation summary
+    needs:
+      - validate-branches
+      - calculate-semver
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Summarise validation
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SEMVER_IMPACT: ${{ needs.calculate-semver.outputs.semver_impact }}
+        run: |
+          echo "Release validation passed."
+          echo "Source: $SOURCE_BRANCH"
+          echo "Target: $TARGET_BRANCH"
+          echo "Semantic Version impact: $SEMVER_IMPACT"
