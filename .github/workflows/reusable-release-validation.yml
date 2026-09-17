@@ -21,15 +21,12 @@ on:
     outputs:
       semver_impact:
         description: Validated Semantic Version impact for the release.
-        value: ${{ jobs.validate-release.outputs.semver_impact }}
+        value: ${{ jobs.calculate-semver.outputs.semver_impact }}
 
 jobs:
-  validate-release:
-    name: Validate release
+  validate-branches:
+    name: Validate release branch flow
     runs-on: ubuntu-latest
-
-    outputs:
-      semver_impact: ${{ steps.semver.outputs.impact }}
 
     steps:
       - name: Validate target branch
@@ -63,72 +60,26 @@ jobs:
           echo "Pull requests targeting main must originate from 'next' or 'hotfix/*'."
           exit 1
 
-      - name: Validate Semantic Version impact label
-        id: semver
-        shell: bash
-        env:
-          LABELS_JSON: ${{ inputs.labels_json }}
-        run: |
-          SEMVER_LABELS=$(echo "$LABELS_JSON" | jq -c '
-            map(
-              select(
-                . == "SemVer: major" or
-                . == "SemVer: minor" or
-                . == "SemVer: patch" or
-                . == "SemVer: none"
-              )
-            )
-          ')
+  calculate-semver:
+    name: Calculate SemVer impact
+    uses: ./.github/workflows/calculate-semver-impact.yml
+    with:
+      labels_json: ${{ inputs.labels_json }}
 
-          LABEL_COUNT=$(echo "$SEMVER_LABELS" | jq 'length')
+  validation-summary:
+    name: Release validation summary
+    needs:
+      - validate-branches
+      - calculate-semver
+    runs-on: ubuntu-latest
 
-          if [[ "$LABEL_COUNT" -eq 0 ]]; then
-            echo "No Semantic Version impact label found."
-            echo "Exactly one of the following labels is required:"
-            echo "  SemVer: major"
-            echo "  SemVer: minor"
-            echo "  SemVer: patch"
-            echo "  SemVer: none"
-            exit 1
-          fi
-
-          if [[ "$LABEL_COUNT" -gt 1 ]]; then
-            echo "Multiple Semantic Version impact labels found:"
-            echo "$SEMVER_LABELS"
-            echo "Exactly one Semantic Version impact label is allowed."
-            exit 1
-          fi
-
-          SEMVER_LABEL=$(echo "$SEMVER_LABELS" | jq -r '.[0]')
-
-          case "$SEMVER_LABEL" in
-            "SemVer: major")
-              IMPACT="major"
-              ;;
-            "SemVer: minor")
-              IMPACT="minor"
-              ;;
-            "SemVer: patch")
-              IMPACT="patch"
-              ;;
-            "SemVer: none")
-              IMPACT="none"
-              ;;
-            *)
-              echo "Unexpected Semantic Version label: $SEMVER_LABEL"
-              exit 1
-              ;;
-          esac
-
-          echo "Validated Semantic Version impact: $IMPACT"
-          echo "impact=$IMPACT" >> "$GITHUB_OUTPUT"
-
-      - name: Release validation summary
+    steps:
+      - name: Summarise validation
         shell: bash
         env:
           SOURCE_BRANCH: ${{ inputs.source_branch }}
           TARGET_BRANCH: ${{ inputs.target_branch }}
-          SEMVER_IMPACT: ${{ steps.semver.outputs.impact }}
+          SEMVER_IMPACT: ${{ needs.calculate-semver.outputs.semver_impact }}
         run: |
           echo "Release validation passed."
           echo "Source: $SOURCE_BRANCH"
