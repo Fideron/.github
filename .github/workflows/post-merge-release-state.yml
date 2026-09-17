@@ -41,9 +41,24 @@ jobs:
         id: published
         shell: bash
         run: |
+          set +e
+        
           RELEASE_JSON=$(gh api \
             -H "Accept: application/vnd.github+json" \
-            "/repos/$REPOSITORY/releases/latest")
+            "/repos/$REPOSITORY/releases/latest" 2>/dev/null)
+
+          STATUS=$?
+
+          set -e
+
+          if [[ "$STATUS" -ne 0 ]]; then
+            echo "No published release found."
+            echo "Using bootstrap baseline v0.0.0."
+
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "latest_tag=v0.0.0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           LATEST_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
 
@@ -53,6 +68,8 @@ jobs:
           fi
 
           echo "Latest published release: $LATEST_TAG"
+
+          echo "exists=true" >> "$GITHUB_OUTPUT"
           echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Calculate candidate version
@@ -169,14 +186,24 @@ jobs:
         env:
           STAGED_VERSION: ${{ steps.staged.outputs.version }}
           PREVIOUS_TAG: ${{ steps.published.outputs.latest_tag }}
+          PREVIOUS_RELEASE_EXISTS: ${{ steps.published.outputs.exists }}
         run: |
-          NOTES_JSON=$(gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/$REPOSITORY/releases/generate-notes" \
-            -f tag_name="$STAGED_VERSION" \
-            -f target_commitish="$TARGET_SHA" \
-            -f previous_tag_name="$PREVIOUS_TAG")
+          if [[ "$PREVIOUS_RELEASE_EXISTS" == "true" ]]; then
+            NOTES_JSON=$(gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$REPOSITORY/releases/generate-notes" \
+              -f tag_name="$STAGED_VERSION" \
+              -f target_commitish="$TARGET_SHA" \
+              -f previous_tag_name="$PREVIOUS_TAG")
+          else
+            NOTES_JSON=$(gh api \
+              --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/$REPOSITORY/releases/generate-notes" \
+              -f tag_name="$STAGED_VERSION" \
+              -f target_commitish="$TARGET_SHA")
+          fi
 
           RELEASE_NAME=$(echo "$NOTES_JSON" | jq -r '.name')
           RELEASE_BODY=$(echo "$NOTES_JSON" | jq -r '.body')
@@ -185,13 +212,14 @@ jobs:
             echo "name<<EOF"
             echo "$RELEASE_NAME"
             echo "EOF"
+
             echo "body<<EOF"
             echo "<!-- fideron-managed-draft -->"
             echo
             echo "$RELEASE_BODY"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-
+          
       - name: Create draft release
         if: >
           steps.staged.outputs.create == 'true' &&
