@@ -31,15 +31,25 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GH_TOKEN: ${{ github.token }}
       SEMVER_IMPACT: ${{ needs.calculate-semver-impact.outputs.semver_impact }}
       REPOSITORY: ${{ github.repository }}
       TARGET_SHA: ${{ github.event.pull_request.merge_commit_sha }}
 
     steps:
+      - name: Generate Fideron Release Automation token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.FIDERON_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.FIDERON_RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+          
       - name: Read latest published release
         id: published
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set +e
         
@@ -107,6 +117,8 @@ jobs:
       - name: Find managed draft release
         id: draft
         shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           RELEASES_JSON=$(gh api \
             -H "Accept: application/vnd.github+json" \
@@ -184,6 +196,7 @@ jobs:
         id: notes
         shell: bash
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           STAGED_VERSION: ${{ steps.staged.outputs.version }}
           PREVIOUS_TAG: ${{ steps.published.outputs.latest_tag }}
           PREVIOUS_RELEASE_EXISTS: ${{ steps.published.outputs.exists }}
@@ -226,6 +239,7 @@ jobs:
           steps.draft.outputs.exists != 'true'
         shell: bash
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           STAGED_VERSION: ${{ steps.staged.outputs.version }}
           RELEASE_NAME: ${{ steps.notes.outputs.name }}
           RELEASE_BODY: ${{ steps.notes.outputs.body }}
@@ -247,6 +261,7 @@ jobs:
           steps.draft.outputs.exists == 'true'
         shell: bash
         env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           DRAFT_ID: ${{ steps.draft.outputs.id }}
           STAGED_VERSION: ${{ steps.staged.outputs.version }}
           RELEASE_NAME: ${{ steps.notes.outputs.name }}
