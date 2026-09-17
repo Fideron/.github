@@ -3,11 +3,6 @@ name: Reusable Release Validation
 on:
   workflow_call:
     inputs:
-      version:
-        description: Semantic version being prepared for release.
-        required: true
-        type: string
-
       source_branch:
         description: Source branch for the release.
         required: true
@@ -18,35 +13,124 @@ on:
         required: true
         type: string
 
+      labels_json:
+        description: JSON array containing the pull request labels.
+        required: true
+        type: string
+
+    outputs:
+      semver_impact:
+        description: Validated Semantic Version impact for the release.
+        value: ${{ jobs.validate-release.outputs.semver_impact }}
+
 jobs:
   validate-release:
     name: Validate release
     runs-on: ubuntu-latest
 
+    outputs:
+      semver_impact: ${{ steps.semver.outputs.impact }}
+
     steps:
-      - name: Validate release branch flow
+      - name: Validate target branch
         shell: bash
+        env:
+          TARGET_BRANCH: ${{ inputs.target_branch }}
         run: |
-          if [[ "${{ inputs.target_branch }}" != "main" ]]; then
+          if [[ "$TARGET_BRANCH" != "main" ]]; then
             echo "Release pull requests must target 'main'."
             exit 1
           fi
 
-          if [[ "${{ inputs.source_branch }}" != "next" ]]; then
-            echo "Release pull requests must originate from 'next'."
-            exit 1
-          fi
+          echo "Valid release target: main"
 
-          echo "Release branch flow is valid: next -> main"
-
-      - name: Validate semantic version
+      - name: Validate source branch
         shell: bash
         env:
-          VERSION: ${{ inputs.version }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
         run: |
-          if [[ ! "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "'$VERSION' is not a valid Semantic Version."
+          if [[ "$SOURCE_BRANCH" == "next" ]]; then
+            echo "Valid normal release source: next"
+            exit 0
+          fi
+
+          if [[ "$SOURCE_BRANCH" == hotfix/* ]]; then
+            echo "Valid hotfix release source: $SOURCE_BRANCH"
+            exit 0
+          fi
+
+          echo "Invalid release source branch: $SOURCE_BRANCH"
+          echo "Pull requests targeting main must originate from 'next' or 'hotfix/*'."
+          exit 1
+
+      - name: Validate Semantic Version impact label
+        id: semver
+        shell: bash
+        env:
+          LABELS_JSON: ${{ inputs.labels_json }}
+        run: |
+          SEMVER_LABELS=$(echo "$LABELS_JSON" | jq -c '
+            map(
+              select(
+                . == "SemVer: major" or
+                . == "SemVer: minor" or
+                . == "SemVer: patch" or
+                . == "SemVer: none"
+              )
+            )
+          ')
+
+          LABEL_COUNT=$(echo "$SEMVER_LABELS" | jq 'length')
+
+          if [[ "$LABEL_COUNT" -eq 0 ]]; then
+            echo "No Semantic Version impact label found."
+            echo "Exactly one of the following labels is required:"
+            echo "  SemVer: major"
+            echo "  SemVer: minor"
+            echo "  SemVer: patch"
+            echo "  SemVer: none"
             exit 1
           fi
 
-          echo "Semantic Version is valid: $VERSION"
+          if [[ "$LABEL_COUNT" -gt 1 ]]; then
+            echo "Multiple Semantic Version impact labels found:"
+            echo "$SEMVER_LABELS"
+            echo "Exactly one Semantic Version impact label is allowed."
+            exit 1
+          fi
+
+          SEMVER_LABEL=$(echo "$SEMVER_LABELS" | jq -r '.[0]')
+
+          case "$SEMVER_LABEL" in
+            "SemVer: major")
+              IMPACT="major"
+              ;;
+            "SemVer: minor")
+              IMPACT="minor"
+              ;;
+            "SemVer: patch")
+              IMPACT="patch"
+              ;;
+            "SemVer: none")
+              IMPACT="none"
+              ;;
+            *)
+              echo "Unexpected Semantic Version label: $SEMVER_LABEL"
+              exit 1
+              ;;
+          esac
+
+          echo "Validated Semantic Version impact: $IMPACT"
+          echo "impact=$IMPACT" >> "$GITHUB_OUTPUT"
+
+      - name: Release validation summary
+        shell: bash
+        env:
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          TARGET_BRANCH: ${{ inputs.target_branch }}
+          SEMVER_IMPACT: ${{ steps.semver.outputs.impact }}
+        run: |
+          echo "Release validation passed."
+          echo "Source: $SOURCE_BRANCH"
+          echo "Target: $TARGET_BRANCH"
+          echo "Semantic Version impact: $SEMVER_IMPACT"
